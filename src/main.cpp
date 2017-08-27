@@ -194,18 +194,12 @@ tk::spline get_spline(vector<vector<double>> ref_points, int ref_lane, const dou
 		ref_points[1].push_back(next_points[1]);
 	}
 	
-	cout << "**** Fitting a Spline to: ***" << endl;
-	
 	// Convert to vehicle space to make sure that nothing weird happens with the math
 	for (int n = 0; n < ref_points[0].size(); n++) {
-		ref_points[0][n] -= car_x;
-		ref_points[1][n] -= car_y;
-		ref_points[0][n] = ref_points[0][n]*cos(-deg2rad(car_yaw))-ref_points[1][n]*sin(-deg2rad(car_yaw));
-		ref_points[1][n] = ref_points[0][n]*sin(-deg2rad(car_yaw))+ref_points[1][n]*cos(-deg2rad(car_yaw));
-		cout << "x: ";
-		cout << ref_points[0][n];
-		cout << ", y: ";
-		cout << ref_points[1][n] << endl;
+		double x_ref = ref_points[0][n] - car_x;
+		double y_ref = ref_points[1][n] - car_y;
+		ref_points[0][n] = x_ref*cos(-deg2rad(car_yaw))-y_ref*sin(-deg2rad(car_yaw));
+		ref_points[1][n] = x_ref*sin(-deg2rad(car_yaw))+y_ref*cos(-deg2rad(car_yaw));
 	}
 	
 	// Create a spline on the reference points
@@ -217,17 +211,6 @@ tk::spline get_spline(vector<vector<double>> ref_points, int ref_lane, const dou
 
 // Returns an xy trajectory given a spline and a reference velocity
 vector<vector<double>> get_trajectory(tk::spline s, double ref_v, const double& car_x, const double& car_y, const double& car_yaw, const double& car_speed, const std::vector<double>& prev_path_x, const std::vector<double>& prev_path_y, double& x2distance, double& planned_speed, double& last_x, double& last_y) {
-
-  cout << "****************************" << endl;
-  cout << "x2distance: ";
-  cout << x2distance << endl;
-  cout << "planned_speed: ";
-  cout << planned_speed << endl;
-  cout << "last_x: ";
-  cout << last_x << endl;
-  cout << "last_y: ";
-  cout << last_y << endl;
-	cout << "* * * * * * * * *" << endl;
 
 	// Starting with the previous path for output
 	vector<double> next_x_values = prev_path_x;
@@ -244,26 +227,21 @@ vector<vector<double>> get_trajectory(tk::spline s, double ref_v, const double& 
 			}
 		
 		// Convert to meters x for this increment
-		double x_increment = planned_speed*0.02/2.23694/x2distance;
+		double x_increment = planned_speed*0.02/2.23694;
 		
 		// Copy the last xy coordinates to vehicle space
 		double vehicle_last_x = last_x - car_x;
 		double vehicle_last_y = last_y - car_y;
-		vehicle_last_x = vehicle_last_x*cos(-deg2rad(car_yaw))-vehicle_last_x*sin(-deg2rad(car_yaw));
+		vehicle_last_x = vehicle_last_x*cos(-deg2rad(car_yaw))-vehicle_last_y*sin(-deg2rad(car_yaw));
 		
 		// Increment the point
 		double x_point = vehicle_last_x + x_increment;
 		double y_point = s(x_point);
-		cout << "Current yaw: ";
-		cout << car_yaw << endl;
-		cout << "GENERATED A POINT x: ";
-		cout << x_point;
-		cout << ", y:";
-		cout << y_point << endl;
 		
 		// Convert to map space
-		x_point = x_point*cos(deg2rad(car_yaw)) - y_point*sin(deg2rad(car_yaw)) + car_x;
+		double ref_x = x_point*cos(deg2rad(car_yaw)) - y_point*sin(deg2rad(car_yaw)) + car_x;
 		y_point = x_point*sin(deg2rad(car_yaw)) + y_point*cos(deg2rad(car_yaw)) + car_y;
+		x_point = ref_x;
 		
 		// Append to final list
 		next_x_values.push_back(x_point);
@@ -278,18 +256,6 @@ vector<vector<double>> get_trajectory(tk::spline s, double ref_v, const double& 
 		
 		last_x = x_point;
 		last_y = y_point;
-		
-		cout << "* * * * * * * * *" << endl;
-		cout << "x2distance: ";
-		cout << x2distance << endl;
-		cout << "planned_speed: ";
-		cout << planned_speed << endl;
-		cout << "last_x: ";
-		cout << last_x << endl;
-		cout << "last_y: ";
-		cout << last_y << endl;
-		cout << "* * * * * * * * *" << endl;
-
 		
 	}
 	
@@ -313,6 +279,8 @@ class Planner {
 		double planned_speed;
 		double last_x;
 		double last_y;
+		int prior_plan;
+		float prior_plan_discount;
 	
 		// Constructor
 		Planner() {
@@ -320,20 +288,144 @@ class Planner {
 			planned_speed = 0.0;
 			last_x = 909.48; // Starting position in the simulator
 			last_y = 1128.67; // Starting position in the simulator
+			prior_plan = -1; // Start at index -1 so that the fresh car know it's starting a new plan
+			prior_plan_discount = 0.0; // Discount the effect of prior plan costs over time so as to not get stuck in a local minimum
 			};
 		
 		// Destructor	
 		~Planner() {};
 		
-		int choose_path(const vector<vector<vector<double>>>& possible_trajectories, const int& prev_path_size, const vector<vector<double>>& sensor_fusion) {
+		int choose_path(const vector<vector<vector<double>>>& possible_trajectories, const int& prev_path_size, const vector<vector<double>>& sensor_fusion, const vector<double>& map_x, const vector<double>& map_y, const vector<double>& map_s, const double& car_speed, const double& car_yaw, int& prior_plan, float& prior_plan_discount) {
 			
 			// Create placeholders for costs
 			vector<double> costs;
 			for (int i = 0; i < possible_trajectories.size(); i++) {
 				costs.push_back(0.0);
 			}
+
+			/* ***********************************************************
+			 *                      Cost Parameters
+			 * **********************************************************/
+
+			// Speed cost parameters
+			double target_speed = 49.0;
+			double speed_limit = 50.0;
+			double stop_cost = 0.8;
+			double speed_coef = 1.0;
 			
-			return 5;
+			// Acceleration cost coef
+			double accel_coef = 0.1;
+			
+			// Jerk cost coef
+			double jerk_coef = 0.1;
+
+			// Switching plan cost
+			double prior_plan_coef = 0.1;
+			
+			/* ***********************************************************
+			 *                     END Cost Parameters
+			 * **********************************************************/
+			
+			// Only calculate costs for the newly created waypoints... the old waypoints will be the same for every possible plan
+			double allowable_distance = 0.35;
+			for (int i = prev_path_size; i < possible_trajectories[0][0].size(); i++) {
+				
+				// TODO: Make better predictions
+				// Make predictions
+				double delta_t = i*0.02;
+				vector<vector<double>> vehicle_predictions = sensor_fusion;
+				for (int x = 0; x < vehicle_predictions.size(); x++) {
+					double near_lane = fabs(fmod(vehicle_predictions[x][6]-2, 4));
+					if ((near_lane <= 0.0+allowable_distance) | (near_lane >= 4.0-allowable_distance)) { // if they're near the center of a lane, assume they'll follow the road curve
+						double dist = sqrt((vehicle_predictions[x][3]*delta_t)*(vehicle_predictions[x][3]*delta_t)+(vehicle_predictions[x][4]*delta_t)*(vehicle_predictions[x][4]*delta_t));
+						vector<double> coords = getXY(vehicle_predictions[x][5]+dist, vehicle_predictions[x][6], map_s, map_x, map_y);
+						vehicle_predictions[x][1] = coords[0];
+						vehicle_predictions[x][2] = coords[1];
+					} else { // if not near the center of the lane, assume they'll just keep going as is
+						vehicle_predictions[x][1] += delta_t*vehicle_predictions[x][3];
+						vehicle_predictions[x][2] += delta_t*vehicle_predictions[x][4];
+						}
+					}
+					
+					/* ***********************************************************
+					 *                           COSTS
+					 * **********************************************************/
+					for (int x = 0; x < possible_trajectories.size(); x++) {
+						
+						// Determine current speed at this timestep
+						double current_speed;
+						if (i > 0) {
+							double delta_x = possible_trajectories[x][0][i]-possible_trajectories[x][0][i-1];
+							double delta_y = possible_trajectories[x][1][i]-possible_trajectories[x][1][i-1];
+							current_speed = sqrt(delta_x*delta_x+delta_y*delta_y)/0.02*2.23694;
+						} else {
+							current_speed = car_speed;
+						}
+						
+						// Apply speed cost
+						if (current_speed < target_speed) {
+							costs[x] += (stop_cost*(round(target_speed-current_speed)/target_speed))*speed_coef;
+						}
+						else if (current_speed > speed_limit) {
+							costs[x] += 1.0*speed_coef;
+						} else {
+							costs[x] += (round(current_speed-target_speed)/(speed_limit-target_speed))*speed_coef;
+						}
+						
+						// If able to calculate an acceleration, apply acceleration cost
+						double prior_delta_x;
+						double prior_delta_y;
+						double prior_speed;
+						double current_acceleration;
+						if (i > 1) {
+							prior_delta_x = possible_trajectories[x][0][i-1]-possible_trajectories[x][0][i-2];
+							prior_delta_y = possible_trajectories[x][1][i-1]-possible_trajectories[x][1][i-2];
+							prior_speed = sqrt(prior_delta_x*prior_delta_x+prior_delta_y*prior_delta_y)/0.02*2.23694;
+							current_acceleration = fabs(current_speed - prior_speed);
+							if (current_acceleration > 10.0) {
+								costs[x] += accel_coef;
+							} else {
+								costs[x] += current_acceleration / 10.0 * accel_coef;
+							}
+						}
+						
+						// If able to calculate jerk, apply jerk cost
+						if (i > 2) {
+							double old_delta_x = possible_trajectories[x][0][i-1]-possible_trajectories[x][0][i-2];
+							double old_delta_y = possible_trajectories[x][1][i-1]-possible_trajectories[x][1][i-2];
+							double old_speed = sqrt(old_delta_x*old_delta_x+old_delta_y*old_delta_y)/0.02*2.23694;
+							double prior_acceleration = fabs(prior_speed - old_speed);
+							double current_jerk = fabs(current_acceleration - prior_acceleration);
+							if (current_jerk > 10.0) {
+								costs[x] += jerk_coef;
+							} else {
+								costs[x] += current_jerk / 10.0 * jerk_coef;
+							}
+						}
+												
+						//~ // Apply cost for switching plans
+						double discount_value = (-1/(1+exp(-0.01*prior_plan_discount))+1)*2; // the longer the car stays in the lane, the less cost to leave it
+						if (!((((x == 0) | (x == 1) | (x == 2)) & ((prior_plan == 0) | (prior_plan == 1) | (prior_plan == 2))) |
+						      (((x == 3) | (x == 4) | (x == 5)) & ((prior_plan == 3) | (prior_plan == 4) | (prior_plan == 5))) |
+						      (((x == 6) | (x == 7) | (x == 8)) & ((prior_plan == 6) | (prior_plan == 7) | (prior_plan == 8))))) {
+							costs[x] += discount_value*prior_plan_coef; // no cost for switching speeds, only for switching to a new lane
+						}
+					}
+				}
+			
+			// ArgMin and update the prior plan
+			int chose_plan = min_element(costs.begin(), costs.end()) - costs.begin();
+			if (!((((chose_plan == 0) | (chose_plan == 1) | (chose_plan == 2)) & ((prior_plan == 0) | (prior_plan == 1) | (prior_plan == 2))) |
+		        (((chose_plan == 3) | (chose_plan == 4) | (chose_plan == 5)) & ((prior_plan == 3) | (prior_plan == 4) | (prior_plan == 5))) |
+						(((chose_plan == 6) | (chose_plan == 7) | (chose_plan == 8)) & ((prior_plan == 6) | (prior_plan == 7) | (prior_plan == 8))))) {
+				prior_plan_discount += 1;
+			} else {
+				prior_plan_discount = 0;
+			}
+			prior_plan = chose_plan;
+			cout << "Choosing plan: ";
+			cout << prior_plan << endl;
+			return prior_plan;
 		}
 		
 		// Plan a path using features about the car, road, and other vehicles
@@ -360,7 +452,7 @@ class Planner {
 			
 			// Generate a trajectory for each direction (lane 1, 2, 3) at each speed (minimum, constant, maximum)
 			vector<vector<vector<double>>> possible_trajectories;
-			vector<double> speeds = {-0.5, car_speed, 150.0};
+			vector<double> speeds = {10.0, car_speed, 150.0}; // 150 mph max speed doesn't really matter because regulating speed limit will be handled by cost function
 			for (int t = 0; t < splines.size(); t++) {
 				
 				// Get the spline
@@ -385,7 +477,7 @@ class Planner {
 				}
 			}
 			
-			int chosen_plan = choose_path(possible_trajectories, previous_path_x.size(), sensor_fusion);
+			int chosen_plan = choose_path(possible_trajectories, previous_path_x.size(), sensor_fusion, map_waypoints_x, map_waypoints_y, map_waypoints_s, car_speed, car_yaw, prior_plan, prior_plan_discount);
 			
 			// Revert to the chosen plan state
 			x2distance = traj_states[chosen_plan][0];
