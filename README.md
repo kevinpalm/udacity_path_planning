@@ -5,18 +5,18 @@ Self-Driving Car Engineer Nanodegree Program
 
 ## Intro / Discussion / Model Documentation
 
-Phew! This project was HARD.
+Phew! This project was HARD. There's a lot of room for improvement but I feel like I've accomplished a lot.
 
 I approached this project in three chunks.
 
 **Prediction**
-	I kept my prediction phase super simple - I just assumed that all the other cars will continue along the curve of the road at their same velocity. The class had a lot of cool ideas about how to improve predictions that I'd love to try out, but there were too many other areas to focus on with better returns.
+	I kept my prediction phase super simple - I just assumed that all the other cars will continue along the curve of the road at their same velocity. The class had a lot of cool ideas about how to improve predictions that I'd love to try out, but there were too many other areas to focus on with better returns. The code for this can be found in main.cpp lines 340-347.
 
 **Trajectory Generation**
-	At each planning step, I generated nine trajectories: one for each unique combination of *increase speed, decrease speed, maintain speed* and *left lane, center lane, right lane*. [I used an open source spline library](http://kluge.in-chemnitz.de/opensource/spline/) to smoothen my trajectories. The splines were set on leftover path points from last planning step (at most two, the rest were discarded) and four points spaced regularly at 30 meters in the intended lane. Each trajectory extends 50 points.
+	At each planning step, I generated nine trajectories: one for each unique combination of *increase speed, decrease speed, maintain speed* and *left lane, center lane, right lane*. [I used an open source spline library](http://kluge.in-chemnitz.de/opensource/spline/) to smoothen my trajectories. The splines were set on leftover path points from last planning step (at most two, the rest were discarded) and four points spaced regularly at 30 meters in the intended lane. Each trajectory extends 50 points. Code for this section is in main.cpp lines 155-272.
 
 **Cost Function / Path Picking**
-	Which trajectory to execute decided by a cost function. The car's cost function accounts for:
+	Which trajectory to execute is decided by a cost function and can be found in main.cpp lines 349-451. The car's cost function accounts for:
 * Speed - the plan is penalized for going too slow or over the speed limit
 * Acceleration - the plan receives a penality if a maximum acceleration is exceeded
 * Jerk - the plan receives a penalty if the maximum jerk is exceeded
