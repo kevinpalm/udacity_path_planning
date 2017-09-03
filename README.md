@@ -1,5 +1,19 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
+
+## Intro / Discussion / Model Documentation
+
+Phew! This project was HARD.
+
+I approached this project in three chunks.
+
+* Prediction
+	I kept my prediction phase super simple - I just assumed that all the other cars will continue along the curve of the road at their same velocity. The class had a lot of cool ideas about how to improve predictions that I'd love to try out, but there were too many other areas to focus on with better returns.
+* Trajectory Generation
+	At each planning step, I generated nine trajectories: one for each unique combination of *increase speed, decrease speed, maintain speed* and *left lane, center lane, right lane*. [I used an open source spline library](http://kluge.in-chemnitz.de/opensource/spline/) to smoothen my trajectories. The splines were set on leftover path points from last planning step (at most two, the rest were discarded) and four points spaced regularly at 30 meters in the intended lane. Each trajectory extends 50 points.
+* Cost Function / Path Picking
+	
+
    
 ### Simulator. You can download the Term3 Simulator BETA which contains the Path Planning Project from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
 
