@@ -443,7 +443,7 @@ class Planner {
 							}	
 						}
 						double effective_collusion_coef = collusion_coef;
-						if (changing_lanes) {effective_collusion_coef *= 10;} // extra costs if we're changing lanes... make sure it's clear
+						if (changing_lanes) {effective_collusion_coef *= 25;} // extra costs if we're changing lanes... make sure it's clear
 						if (backwards_final_time_to_collusion < 9999999999999.0) {
 							costs[x] += (2*(1/(1+exp(follow_ratio*backwards_final_time_to_collusion))))*effective_collusion_coef; // apply buffer cost on the closest vehicle behind with predictions
 						}
