@@ -323,11 +323,14 @@ class Planner {
 
 			// Switching plan cost
 			double prior_plan_coef = 20.0;
-			double double_lane_coef = 250.0;
+			double double_lane_coef = 150.0;
 			
 			// buffer / collusion cost
 			double collusion_coef = 250.0;
-			double follow_ratio = 0.225;
+			double follow_ratio = 0.25;
+			
+			// lane change buffer
+			double lane_change_coef = 200.0;
 			
 			/* ***********************************************************
 			 *                     END Cost Parameters
@@ -413,7 +416,7 @@ class Planner {
 						}
 						
 						
-						// Apply cost for collusions / buffer
+						// Apply cost for collusions / buffers
 						bool changing_lanes = !((((x == 0) | (x == 1) | (x == 2)) & ((prior_plan == 0) | (prior_plan == 1) | (prior_plan == 2))) |
 		                                (((x == 3) | (x == 4) | (x == 5)) & ((prior_plan == 3) | (prior_plan == 4) | (prior_plan == 5))) |
 					                          (((x == 6) | (x == 7) | (x == 8)) & ((prior_plan == 6) | (prior_plan == 7) | (prior_plan == 8))));
@@ -421,9 +424,11 @@ class Planner {
 						double current_lane = (coords[1]-2)/4;
 						double backwards_final_time_to_collusion = 9999999999999.0; // Just using a big number beyond sensor range
 						double forwards_final_time_to_collusion = 9999999999999.0; // Just using a big number beyond sensor range
+						double nearest_neighbor_lane = 9999999999999.0;
 						for (int z = 0; z < vehicle_predictions.size(); z++) {
 							double backwards_time_to_collusion = 9999999999999.0; // actually this is distance now... TODO: clean up variable names
 							double forwards_time_to_collusion = 9999999999999.0; // actually this is distance now... TODO: clean up variable names
+							double single_neighbor_lane = 9999999999999.0;
 							double other_vehicle_lane = (vehicle_predictions[z][6]-2)/4;
 							if (abs(current_lane-other_vehicle_lane) <= 0.5) { // if overlapping lanes...
 								if ((vehicle_predictions[z][5]-coords[0] <= 4.8) & (changing_lanes)) {
@@ -440,15 +445,25 @@ class Planner {
 								if (forwards_time_to_collusion < forwards_final_time_to_collusion) {
 									forwards_final_time_to_collusion = forwards_time_to_collusion;
 								}
-							}	
+							}
+							
+							// Check for nearest neighbor if changing lanes
+							double new_lane = floor(x/3);
+							if ((changing_lanes) & (abs(new_lane-other_vehicle_lane) <= 0.5)) {
+								single_neighbor_lane = abs(vehicle_predictions[z][5]-coords[0]);
+							}
+							if (single_neighbor_lane < nearest_neighbor_lane) {
+								nearest_neighbor_lane = single_neighbor_lane;
+							}
 						}
-						double effective_collusion_coef = collusion_coef;
-						if (changing_lanes) {effective_collusion_coef *= 20;} // extra costs if we're changing lanes... make sure it's clear
 						if (backwards_final_time_to_collusion < 9999999999999.0) {
-							costs[x] += (2*(1/(1+exp(follow_ratio*backwards_final_time_to_collusion))))*effective_collusion_coef; // apply buffer cost on the closest vehicle behind with predictions
+							costs[x] += (2*(1/(1+exp(follow_ratio*backwards_final_time_to_collusion))))*collusion_coef; // apply buffer cost on the closest vehicle behind with predictions
 						}
 						if (forwards_final_time_to_collusion < 9999999999999.0) {
-							costs[x] += (2*(1/(1+exp(follow_ratio*forwards_final_time_to_collusion))))*effective_collusion_coef; // apply buffer cost on the closest vehicle ahead with predictions
+							costs[x] += (2*(1/(1+exp(follow_ratio*forwards_final_time_to_collusion))))*collusion_coef; // apply buffer cost on the closest vehicle ahead with predictions
+						}
+						if (nearest_neighbor_lane < 20.0) {
+							costs[x] += lane_change_coef; // Make sure we have at minimum 20 meters of buffer for a lane change
 						}
 					}
 				}

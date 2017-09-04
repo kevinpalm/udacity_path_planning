@@ -1,7 +1,7 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
 
-![GIF of the car driving and executing lane changes](https://github.com/kevinpalm/udacity_path_planning/blob/master/path_planner.gif "Driving Footage")
+![GIF of the car driving and executing lane changes](https://github.com/kevinpalm/udacity_path_planning/blob/master/path_planner2.gif "Driving Footage")
 
 ## Intro / Discussion / Model Documentation
 
@@ -22,7 +22,8 @@ I approached this project in three chunks.
 * Jerk - the plan receives a penalty if the maximum jerk is exceeded
 * Frequent lane changes - the plan receives a sigmoid scaled penalty if changing lanes too recently since a prior lane change (deteriorates within a few seconds)
 * Double lane changes - the plan receives a large penalty if changing across two lanes at once
-* Collusion / buffer distance - a sigmoid scaled penalty based on the nearest car ahead in the lane is added to each point of the plan. If doing a lane change, the nearest car behind is also checked and the cost is scaled up.
+* Collusion / buffer distance - a sigmoid scaled penalty based on the nearest car ahead in the lane is added to each point of the plan. If doing a lane change, the nearest car behind is also checked.
+* Lane change buffer - If doing a lane change, a cost is added if there's any vehicle within 20 meters of each planned point in that lane.
 
 Overall, I liked that this project had so much freedom in how students could approach it, but I definitely spent time struggling with how to clarify / divide up the problem. I think that I arrived at a framework that has a lot of potential if I were to continue the project. Next steps would be to generate more trajectories (the classroom videos shared the practice of generating a 'cluster' of endpoints and then picking the best one) to smoothen out the velocity and allow for different accelerations. Right now the car does not move smoothly. Also, better predictions would be a good improvement and figuring out a way to not drive with 'blinders' (currently the car doesn't consider other vehicles in neghboring lanes unless considering a lane change) so that some more long-term prioritization could happen.
    
